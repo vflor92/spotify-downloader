@@ -1,0 +1,28 @@
+/Users/vitaliy/.gemini/antigravity/scratch/spotify-downloader/backend/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+INFO:     Started server process [6763]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/0aBO6YjdE8tAh6Try7eOpq
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 7 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+INFO:     127.0.0.1:56874 - "POST /analyze HTTP/1.1" 200 OK
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/0aBO6YjdE8tAh6Try7eOpq?si=940ae079c6404104
+INFO:     127.0.0.1:56931 - "POST /analyze HTTP/1.1" 200 OK
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/4mahGZqnJRc70K7bNHp7oY?si=f832f625708b411f
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 4 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 3 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 2 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+WARNING:spotipy.util:Your application has reached a rate/request limit. Retry will occur after: 1 s
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/0aBO6YjdE8tAh6Try7eOpq?si=a1ea0e5f14a448ba
+INFO:     127.0.0.1:57069 - "POST /analyze HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56983 - "POST /analyze HTTP/1.1" 200 OK
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/0aBO6YjdE8tAh6Try7eOpq?si=a1ea0e5f14a448ba
+INFO:     127.0.0.1:57136 - "POST /analyze HTTP/1.1" 200 OK
+INFO:metadata_service:Analyzing URL: https://open.spotify.com/playlist/0aBO6YjdE8tAh6Try7eOpq?si=a1ea0e5f14a448ba
+INFO:     127.0.0.1:57168 - "POST /analyze HTTP/1.1" 200 OK
