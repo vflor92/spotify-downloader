@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import json
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # Configuration
@@ -21,21 +22,56 @@ if st.button("Analyze Playlist"):
     if not url_input:
         st.error("Please enter a URL")
     else:
-        with st.spinner("Analyzing playlist..."):
-            try:
-                response = requests.post(f"{BACKEND_URL}/analyze", json={"url": url_input})
+
+        # Progress Bar Container
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        all_tracks = []
+        
+        try:
+            # Use GET for streaming endpoint
+            with requests.get(f"{BACKEND_URL}/analyze_stream", params={"url": url_input}, stream=True) as response:
                 if response.status_code == 200:
-                    data = response.json()
-                    tracks = data.get("tracks", [])
-                    if tracks:
-                        st.session_state["tracks_df"] = pd.DataFrame(tracks)
-                        st.success(f"Found {len(tracks)} tracks!")
+                    for line in response.iter_lines():
+                        if line:
+                            json_data = line.decode('utf-8')
+                            try:
+                                chunk = json.loads(json_data)
+                                
+                                if "error" in chunk:
+                                    st.error(f"Error: {chunk['error']}")
+                                    break
+                                    
+                                # Update data
+                                tracks_chunk = chunk.get("tracks", [])
+                                all_tracks.extend(tracks_chunk)
+                                
+                                # Update UI
+                                progress = chunk.get("progress", 0)
+                                total = chunk.get("total", 1)
+                                if total > 0:
+                                    percentage = min(progress / total, 1.0)
+                                    progress_bar.progress(percentage)
+                                    status_text.text(f"Fetched {progress} / {total} songs...")
+                                    
+                            except json.JSONDecodeError:
+                                continue
+                                
+                    # Finalization
+                    if all_tracks:
+                        st.session_state["tracks_df"] = pd.DataFrame(all_tracks)
+                        st.success(f"Analysis Complete! Found {len(all_tracks)} tracks.")
+                        status_text.empty()
+                        progress_bar.empty()
                     else:
                         st.warning("No tracks found.")
+                        
                 else:
-                    st.error(f"Error: {response.text}")
-            except Exception as e:
-                st.error(f"Connection Error: {e}")
+                    st.error(f"Server Error: {response.text}")
+
+        except Exception as e:
+            st.error(f"Connection Error: {e}")
 
 # --- Step C: Display & Select (The Grid) ---
 if st.session_state["tracks_df"] is not None:
@@ -50,7 +86,7 @@ if st.session_state["tracks_df"] is not None:
     # Configure AgGrid
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_column("No.", pinned=True, width=70) # Pin index to left
-    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+    # gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20) # Disable pagination to allow scrolling
     gb.configure_side_bar() # Enable sidebar filters
     gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, aggFunc='sum', editable=False)
     
@@ -104,16 +140,25 @@ if st.session_state["tracks_df"] is not None:
             else:
                  urls = [row['url'] for row in selected_rows]
                  
-            with st.spinner("Initiating download batch..."):
+            with st.spinner("Processing Download (this may take a while)..."):
                 try:
                     # Calling the backend endpoint
-                    dl_response = requests.post(f"{BACKEND_URL}/download_batch", json={"urls": urls})
+                    # This is a blocking call!
+                    dl_response = requests.post(f"{BACKEND_URL}/download_batch", json={"urls": urls}, stream=False)
                     
                     if dl_response.status_code == 200:
-                        st.success("Download started! (Mock mocked for now)")
-                        # In real scenario, we would stream the zip file here
+                        st.session_state['download_content'] = dl_response.content
+                        st.success("Download ready! Click below to save.")
                     else:
                         st.error(f"Download failed: {dl_response.text}")
-                        
                 except Exception as e:
-                     st.error(f"Error contacting backend: {e}")
+                    st.error(f"Connection Error: {e}")
+
+    # Show download button if content exists
+    if 'download_content' in st.session_state:
+        st.download_button(
+            label="💾 Save Playlist ZIP",
+            data=st.session_state['download_content'],
+            file_name="spotify_playlist.zip",
+            mime="application/zip"
+        )

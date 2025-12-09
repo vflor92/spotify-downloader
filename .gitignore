@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+.env
+
+# Logs
+*.log
+
+# Spotdl / Downloads
+backend/temp_downloads/
+*.mp3
+*.zip
+.spotdl-cache/
+songs.txt
+
+# Mac
+.DS_Store
