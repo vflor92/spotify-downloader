@@ -140,19 +140,59 @@ if st.session_state["tracks_df"] is not None:
             else:
                  urls = [row['url'] for row in selected_rows]
                  
-            with st.spinner("Processing Download (this may take a while)..."):
-                try:
-                    # Calling the backend endpoint
-                    # This is a blocking call!
-                    dl_response = requests.post(f"{BACKEND_URL}/download_batch", json={"urls": urls}, stream=False)
-                    
-                    if dl_response.status_code == 200:
-                        st.session_state['download_content'] = dl_response.content
-                        st.success("Download ready! Click below to save.")
-                    else:
-                        st.error(f"Download failed: {dl_response.text}")
-                except Exception as e:
-                    st.error(f"Connection Error: {e}")
+            # st.spinner is not needed as we show partial progress immediately
+            dl_progress = st.progress(0)
+            dl_status = st.empty()
+            dl_log_expander = st.expander("Show detailed logs", expanded=True)
+            dl_logs = st.empty()
+            log_buffer = []
+
+            try:
+                # Use stream=True to consume NDJSON
+                with requests.post(f"{BACKEND_URL}/download_batch", json={"urls": urls}, stream=True) as response:
+                    for line in response.iter_lines():
+                        if line:
+                            json_data = line.decode('utf-8')
+                            try:
+                                chunk = json.loads(json_data)
+                                
+                                # Error handling
+                                if "error" in chunk:
+                                    st.error(f"Download Error: {chunk['error']}")
+                                    break
+                                
+                                # Log updates
+                                if "log" in chunk:
+                                    msg = chunk['log']
+                                    log_buffer.append(msg)
+                                    # Update expanding log window (keep last 10 lines to avoid spam)
+                                    dl_logs.code("\n".join(log_buffer[-10:]))
+                                    dl_status.text(msg)
+                                
+                                # Progress updates
+                                if "progress_update" in chunk:
+                                    dl_progress.progress(chunk['progress_update'])
+
+                                # Completion
+                                if chunk.get("done") and "download_url" in chunk:
+                                    dl_progress.progress(1.0) # Ensure 100%
+                                    
+                                    # Fetch the file content
+                                    file_url = f"{BACKEND_URL}{chunk['download_url']}"
+                                    st.info(f"Fetching ZIP file from {file_url}...")
+                                    
+                                    file_resp = requests.get(file_url)
+                                    if file_resp.status_code == 200:
+                                        st.session_state['download_content'] = file_resp.content
+                                        st.success("Download Complete! Click below to save.")
+                                    else:
+                                        st.error("Failed to retrieve final zip file.")
+
+                            except json.JSONDecodeError:
+                                continue
+                                
+            except Exception as e:
+                st.error(f"Connection Error: {e}")
 
     # Show download button if content exists
     if 'download_content' in st.session_state:

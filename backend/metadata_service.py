@@ -88,109 +88,157 @@ def cleanup_files(folder_path: str, zip_path: str):
     except Exception as e:
         logger.error(f"Error cleaning up files: {e}")
 
-@app.post("/download_batch")
-def download_batch(request: DownloadRequest, background_tasks: BackgroundTasks):
+@app.get("/download_file/{session_id}")
+def download_file(session_id: str, background_tasks: BackgroundTasks):
     """
-    Downloads list of songs using spotdl, zips them, and returns the zip file.
-    Warning: blocking operation, may timeout for large lists.
+    Serves the zip file for a given session ID and cleans up afterwards.
+    """
+    base_dir = os.getcwd()
+    zip_path = os.path.join(base_dir, "temp_downloads", f"spotify_download_{session_id}.zip")
+    temp_dir = os.path.join(base_dir, "temp_downloads", session_id)
+    
+    if not os.path.exists(zip_path):
+        raise HTTPException(status_code=404, detail="File not found or expired")
+        
+    return FileResponse(
+        zip_path, 
+        media_type='application/zip', 
+        filename="spotify_download.zip",
+        background=background_tasks.add_task(cleanup_files, temp_dir, zip_path)
+    )
+
+@app.post("/download_batch")
+def download_batch(request: DownloadRequest):
+    """
+    Downloads list of songs using spotdl via subprocess.Popen.
+    Streams output logs to the client (NDJSON).
+    Returns {"done": true, "session_id": "...", "download_url": "..."} at the end.
     """
     session_id = str(uuid.uuid4())
-    base_dir = os.getcwd() # Should be .../backend
-    temp_dir = os.path.join(base_dir, "temp_downloads", session_id)
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    songs_file = os.path.join(temp_dir, "songs.txt")
-    zip_filename = f"spotify_download_{session_id}"
-    zip_path = os.path.join(base_dir, "temp_downloads", f"{zip_filename}.zip")
+    logger.info(f"Starting batch download sesion (Stream): {session_id} for {len(request.urls)} songs")
 
-    logger.info(f"Starting batch download sesion (Fixed Args): {session_id} for {len(request.urls)} songs")
-
-    try:
-        # Step B: Write songs.txt
-        with open(songs_file, "w") as f:
-            for url in request.urls:
-                f.write(url + "\n")
-
-        # Step C: Execute spotdl
-        # Note: We assume spotdl is in venv/bin/spotdl relative to current working dir (backend)
-        spotdl_bin = os.path.join(base_dir, "venv", "bin", "spotdl")
-        if not os.path.exists(spotdl_bin):
-            # Fallback to system spotdl if not in venv
-            spotdl_bin = "spotdl"
-
-        # Validation: Check if files exist
-        song_list = []
-        with open(songs_file, "r") as f:
-             song_list = [line.strip() for line in f if line.strip()]
-
-        # Construct command
-        # --simple-tui to reduce log noise
-        # Pass URLs directly as arguments to avoid file detection issues
-        cmd = [
-            spotdl_bin,
-            "download", # Explicitly state operation
-            *song_list,
-            "--overwrite", "force",
-            "--simple-tui" 
-        ]
+    def event_generator():
+        base_dir = os.getcwd()
+        temp_dir = os.path.join(base_dir, "temp_downloads", session_id)
+        os.makedirs(temp_dir, exist_ok=True)
+        songs_file = os.path.join(temp_dir, "songs.txt")
+        report_file = os.path.join(temp_dir, "downloadreport.txt")
+        zip_filename = f"spotify_download_{session_id}"
+        zip_path = os.path.join(base_dir, "temp_downloads", f"{zip_filename}.zip")
         
-        logger.info(f"Running command: {' '.join(cmd)}")
-        
-        # Run subprocess with timeout
-        result = subprocess.run(
-            cmd,
-            cwd=temp_dir, # Run inside the temp directory
-            check=True,
-            timeout=300, # 5 minutes timeout
-            capture_output=True
-        )
-        logger.info(f"Spotdl Output: {result.stdout.decode() if result.stdout else 'No stdout'}")
+        try:
+             # Helper to write to report
+            def log_to_report(msg):
+                with open(report_file, "a") as f:
+                    f.write(msg + "\n")
 
-        # Validation: Check if files exist
-        downloaded_files = os.listdir(temp_dir)
-        downloaded_files = [f for f in downloaded_files if f != "songs.txt"]
-        if not downloaded_files:
-             logger.error("No files downloaded, but spotdl exited 0.")
-             # Attempt to find where it might have gone? No, just fail.
-             raise Exception("Spotdl finished but no files were found in output directory.")
+            # Step B: Write songs.txt
+            with open(songs_file, "w") as f:
+                for url in request.urls:
+                    f.write(url + "\n")
+            
+            init_msg = "Initialized download session..."
+            yield json.dumps({"log": init_msg}) + "\n"
+            log_to_report(init_msg)
 
-        # Step D: Package (Zip)
-        # make_archive expects base_name (without extension) and root_dir
-        shutil.make_archive(
-            os.path.join(base_dir, "temp_downloads", zip_filename),
-            'zip',
-            temp_dir
-        )
-        
-        if not os.path.exists(zip_path):
-            raise Exception("Zip file was not created")
+            # Step C: Execute spotdl
+            spotdl_bin = os.path.join(base_dir, "venv", "bin", "spotdl")
+            if not os.path.exists(spotdl_bin):
+                spotdl_bin = "spotdl"
 
-        # Step E: Return & Cleanup
-        background_tasks.add_task(cleanup_files, temp_dir, zip_path)
-        
-        return FileResponse(
-            zip_path, 
-            media_type='application/zip', 
-            filename="spotify_download.zip"
-        )
+            song_list = []
+            with open(songs_file, "r") as f:
+                 song_list = [line.strip() for line in f if line.strip()]
 
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Spotdl failed: {e.stderr.decode() if e.stderr else 'No stderr'} | Output: {e.stdout.decode() if e.stdout else 'No stdout'}"
-        logger.error(error_msg)
-        cleanup_files(temp_dir, zip_path) # Cleanup on failure
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
-    except subprocess.TimeoutExpired:
-        logger.error("Download timed out")
-        cleanup_files(temp_dir, zip_path)
-        raise HTTPException(status_code=504, detail="Download timed out (limit 5 mins)")
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        cleanup_files(temp_dir, zip_path)
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+            cmd = [
+                spotdl_bin,
+                "download",
+                *song_list,
+                "--overwrite", "force",
+                "--simple-tui"
+            ]
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+            start_msg = f"Running spotdl for {len(song_list)} songs..."
+            yield json.dumps({"log": start_msg}) + "\n"
+            log_to_report(start_msg)
+            
+            # Use Popen to stream output
+            process = subprocess.Popen(
+                cmd,
+                cwd=temp_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, # Merge stderr into stdout
+                text=True,
+                bufsize=1 # Line buffered
+            )
+            
+            # Read line by line
+            total_songs = len(request.urls)
+            songs_done = 0
+            
+            for line in process.stdout:
+                line = line.strip()
+                if line:
+                    log_to_report(line)
+                    
+                    # Parse progress roughly
+                    current_fraction = 0
+                    if ": Downloading" in line:
+                         current_fraction = 0.1
+                    elif ": Embedding metadata" in line:
+                         current_fraction = 0.5
+                    elif ": Done" in line:
+                         songs_done += 1
+                         current_fraction = 0.0 # Song is done, waiting for next
+                    
+                    # Calculate total progress (avoid > 1.0)
+                    overall_progress = min((songs_done + current_fraction) / total_songs, 0.99)
+                    
+                    yield json.dumps({"log": line, "progress_update": overall_progress}) + "\n"
+            
+            process.wait()
+            
+            if process.returncode != 0:
+                 err_msg = f"Spotdl exited with code {process.returncode}"
+                 log_to_report(err_msg)
+                 yield json.dumps({"error": err_msg}) + "\n"
+                 return
+
+            # Step D: Verify & Package
+            downloaded_files = [f for f in os.listdir(temp_dir) if f != "songs.txt" and f != "downloadreport.txt"]
+            if not downloaded_files:
+                 no_files_msg = "No files downloaded."
+                 log_to_report(no_files_msg)
+                 yield json.dumps({"error": no_files_msg}) + "\n"
+                 return
+                 
+            zip_msg = "Zipping files..."
+            yield json.dumps({"log": zip_msg}) + "\n"
+            log_to_report(zip_msg)
+            log_to_report("Download Report Complete.")
+            
+            shutil.make_archive(
+                os.path.join(base_dir, "temp_downloads", zip_filename),
+                'zip',
+                temp_dir
+            )
+            
+            download_url = f"/download_file/{session_id}"
+            yield json.dumps({
+                "done": True, 
+                "session_id": session_id,
+                "download_url": download_url,
+                "log": "Download Complete!"
+            }) + "\n"
+
+        except Exception as e:
+            logger.error(f"Stream Error: {e}")
+            yield json.dumps({"error": str(e)}) + "\n"
+            # Cleanup on error
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 @app.get("/analyze_stream")
 def analyze_stream(url: str):
     """
