@@ -1,0 +1,25 @@
+Spotify Downloader Report - Session bc68de19-41fd-41c3-ac56-965a9c06e50c
+=================================================
+
+Summary:
+Total Requested: 2
+Successful: 0
+Failed: 6
+
+FAILED SONGS:
+-------------
+- Unknown
+  Reason: HTTP Error for GET to https://api.spotify.com/v1/tracks/invalid12345 with Params: {'market': None} returned 400 due to Invalid base62 id
+- Unknown
+  Reason: │    273 │   │   except requests.exceptions.HTTPError as http_error:           │
+- Unknown
+  Reason: │ ❱ 1026 │   │   │   raise HTTPError(http_error_msg, response=self)            │
+- Unknown
+  Reason: HTTPError: 400 Client Error: Bad Request for url:
+- Unknown
+  Reason: │    87 │   │   │   raise SongError(                                           │
+- Unknown
+  Reason: │    288 │   │   │   logger.error(f"HTTP Error for {method} to {url} with Para │
+
+SUCCESSFUL SONGS:
+-----------------
